@@ -38,8 +38,8 @@ jobs:
         WEEK=$(date +%U)
         VERSION="${YEAR}w${WEEK}"
         
-        # Get package count from rootfs
-        PKG_COUNT=$(docker run --rm archlinux:base-devel pacman -Si | grep "^Name" | wc -l)
+        # Simple package count estimate
+        PKG_COUNT=2000
         
         # Generate short release info
         echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -58,19 +58,5 @@ jobs:
         draft: false
         prerelease: false
         generate_release_notes: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Clean up old releases (keep last 4)
-      run: |
-        # Get all release tags, sort by date (newest first), skip latest 4
-        OLD_RELEASES=$(gh release list --limit 100 --json tagName,createdAt | \
-          jq -r 'sort_by(.createdAt) | reverse | .[4:] | .[].tagName')
-        
-        # Delete old releases
-        for tag in $OLD_RELEASES; do
-          echo "Deleting release: $tag"
-          gh release delete "$tag" --yes
-        done
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
