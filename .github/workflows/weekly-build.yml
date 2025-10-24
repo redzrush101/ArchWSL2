@@ -1,0 +1,76 @@
+name: Weekly Build & Release
+
+on:
+  schedule:
+    # Run every Sunday at 2 AM UTC
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      releases: write
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bsdtar zip unzip jq curl
+        
+    - name: Build ArchWSL
+      run: |
+        make clean
+        make
+        
+    - name: Generate release info
+      id: release_info
+      run: |
+        # Generate short date-based version (e.g., 2025w43 for week 43 of 2025)
+        YEAR=$(date +%Y)
+        WEEK=$(date +%U)
+        VERSION="${YEAR}w${WEEK}"
+        
+        # Get package count from rootfs
+        PKG_COUNT=$(docker run --rm archlinux:base-devel pacman -Si | grep "^Name" | wc -l)
+        
+        # Generate short release info
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=$VERSION" >> $GITHUB_OUTPUT
+        echo "name=ArchWSL $VERSION" >> $GITHUB_OUTPUT
+        echo "body=📦 $PKG_COUNT packages | 🗓️ Week $WEEK $YEAR | ⚡ Latest Arch Linux" >> $GITHUB_OUTPUT
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.release_info.outputs.tag }}
+        name: ${{ steps.release_info.outputs.name }}
+        body: ${{ steps.release_info.outputs.body }}
+        files: |
+          ArchWSL2.zip
+        draft: false
+        prerelease: false
+        generate_release_notes: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Clean up old releases (keep last 4)
+      run: |
+        # Get all release tags, sort by date (newest first), skip latest 4
+        OLD_RELEASES=$(gh release list --limit 100 --json tagName,createdAt | \
+          jq -r 'sort_by(.createdAt) | reverse | .[4:] | .[].tagName')
+        
+        # Delete old releases
+        for tag in $OLD_RELEASES; do
+          echo "Deleting release: $tag"
+          gh release delete "$tag" --yes
+        done
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
